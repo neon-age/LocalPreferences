@@ -1,5 +1,6 @@
 # LocalPreferences
 Better alternative for Unity's PlayerPrefs
+#### Edit > Local Preferences > Player / Editor
 
 ![LocalPrefsWindow](https://i.imgur.com/y7fWUQJ.png)\
 Made in Unity 2019.3, but should work with older versions.
