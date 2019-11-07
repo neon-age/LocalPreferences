@@ -34,7 +34,7 @@ namespace Neonagee.EditorInternal
         {
             EditorLocalPrefs.Save(EditorLocalPrefs.defaultFileName);
             window = GetWindow<EditorLocalPrefsWindow>();
-            window.titleContent = new GUIContent("Editor Local Prefs");
+            window.titleContent = new GUIContent("Editor Prefs");
         }
         static void ClearAll()
         {
