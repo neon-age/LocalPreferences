@@ -15,6 +15,11 @@ Made in Unity 2019.3, but should work with older versions.
 | LocalPrefs   | 3-8ms     | 100ms    |
 | PlayerPrefs     | 40-45ms       | 6,300ms      |
 
+| Get | 1000 floats | 10000 floats |
+| :---         |     :---:      |     :---:      |
+| LocalPrefs   | 1ms     | 4ms    |
+| PlayerPrefs     | 2ms       | 67ms      |
+
 ### Note: Doesn't tested on Android.
 
 ## TODO
