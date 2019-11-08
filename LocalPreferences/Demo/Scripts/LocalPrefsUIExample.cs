@@ -111,7 +111,7 @@ namespace Neonagee.Tests
         }
         void DestroyBool(BoolUI boolUI)
         {
-            LocalPrefs.DeleteKey<bool>(boolUI.key);
+            LocalPrefs.RemoveKey<bool>(boolUI.key);
             Destroy(boolUI.parent);
             bools.Remove(boolUI);
         }

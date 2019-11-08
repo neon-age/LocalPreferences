@@ -5,6 +5,7 @@ using UnityEngine;
 using UnityEditor;
 using UnityEditor.AnimatedValues;
 using Neonagee.LocalPreferences;
+using System.Text.RegularExpressions;
 
 namespace Neonagee.EditorInternal
 {
@@ -32,25 +33,20 @@ namespace Neonagee.EditorInternal
         [MenuItem("Edit/Local Preferences/Editor", priority = 2)]
         static void Open()
         {
-            EditorLocalPrefs.Save(EditorLocalPrefs.defaultFileName);
             window = GetWindow<EditorLocalPrefsWindow>();
             window.titleContent = new GUIContent("Editor Prefs");
-        }
-        static void ClearAll()
-        {
-
         }
 
         private void OnEnable()
         {
             window = this;
             isInitialized = false;
+            script = EditorLocalPrefs.Data;
         }
         void Initialize()
         {
-            script = EditorLocalPrefs.Data;
-            EditorLocalPrefs.Load(EditorLocalPrefs.defaultFileName);
-            FindSaveFiles(script.filesPath);
+            FindSaveFiles(script.FilesPath);
+            EditorLocalPrefs.Load(files[selectedFile]);
 
             EditorApplication.update += Repaint;
 
@@ -63,14 +59,6 @@ namespace Neonagee.EditorInternal
             prefGUIs.Add(vector4GUI = new PrefGUI<Vector4>("Vector4"));
             prefGUIs.Add(stringGUI = new PrefGUI<string>("String"));
         }
-        private void OnDisable()
-        {
-            EditorLocalPrefs.Save(files[selectedFile]);
-            EditorApplication.update -= Repaint;
-
-            isInitialized = false;
-        }
-
         string[] files = new string[0];
         int m_selectedFile;
         int selectedFile { get { return m_selectedFile = Mathf.Clamp(m_selectedFile, 0, files.Length - 1); } set { m_selectedFile = value; } }
@@ -83,6 +71,21 @@ namespace Neonagee.EditorInternal
             {
                 files[i] = info[i].Name.Replace(EditorLocalPrefs.filesExtension, "");
             }
+        }
+        public static void MoveElement<T>(ref List<T> list, int from, int to)
+        {
+            var obj = list[from];
+            list.RemoveAt(from);
+            while (to < 0) to++;
+            while (to > list.Count) to--;
+            list.Insert(to, obj);
+        }
+        private void OnDisable()
+        {
+            EditorLocalPrefs.Save(files[selectedFile]);
+            EditorApplication.update -= Repaint;
+
+            isInitialized = false;
         }
 
         public struct PrefGUI<T> : IPrefGUI
@@ -122,10 +125,12 @@ namespace Neonagee.EditorInternal
                 label = customLabel != null ? customLabel : type.Name;
                 valueName = customValueName != null ? customValueName : label;
                 PN_collapse = script.GetType().Name + " " + type.Name + " Collapsed";
-                collapse = new AnimBool(window.Repaint) { speed = 3.5f, target = EditorLocalPrefs.GetBool(PN_collapse) };
+                bool collapsed = EditorLocalPrefs.GetBool(PN_collapse);
+                collapse = new AnimBool(window.Repaint) { speed = 3.5f, target = collapsed, value = collapsed };
                 changes = new List<Changes>();
                 foundItemsCount = 0;
                 nothingFound = false;
+                showItem = new bool[0];
             }
             public void Expand()
             {
@@ -135,6 +140,7 @@ namespace Neonagee.EditorInternal
             {
                 EditorLocalPrefs.SetBool(PN_collapse, false);
             }
+            bool[] showItem;
             public Prefs<T> DoLayout(Prefs<T> prefs)
             {
                 string filter = searchFilter.ToLower();
@@ -143,10 +149,18 @@ namespace Neonagee.EditorInternal
                     foundItemsCount = prefs.Count;
                 else
                 {
+                    showItem = new bool[prefs.dictionary.Count];
                     foundItemsCount = 0;
+                    int i = 0;
                     foreach (var value in prefs.dictionary)
+                    {
                         if (value.Key.ToLower().Contains(filter))
+                        {
+                            showItem[i] = true;
                             foundItemsCount++;
+                        }
+                        i++;
+                    }
                     nothingFound = foundItemsCount == 0;
                 }
                 if (window == null || script == null || nothingFound)
@@ -155,21 +169,36 @@ namespace Neonagee.EditorInternal
                 changes.Clear();
                 EditorGUILayout.BeginVertical(regionBg, GUILayout.MaxHeight(18));
                 EditorGUILayout.BeginHorizontal();
-                collapse.target = GUILayout.Toggle(EditorLocalPrefs.GetBool(PN_collapse), label, foldout, GUILayout.ExpandWidth(true));
+
+                EditorGUI.BeginChangeCheck();
+                collapse.target = GUILayout.Toggle(searching ? true : EditorLocalPrefs.GetBool(PN_collapse),
+                                  label, foldout, GUILayout.ExpandWidth(true));
+                if (EditorGUI.EndChangeCheck())
+                {
+                    EditorLocalPrefs.SetBool(PN_collapse, collapse.target);
+                }
+
                 GUILayout.FlexibleSpace();
                 GUILayout.Button("[" + foundItemsCount + "]", EditorStyles.centeredGreyMiniLabel);
-                EditorLocalPrefs.SetBool(PN_collapse, collapse.target);
-                if (GUILayout.Button(new GUIContent("", !searching ? "Clear All" : "Clear Only Found Items"), "WinBtnCloseMac"))
+
+                if (GUILayout.Button(new GUIContent("", !searching ? "Clear All" : "Remove Found Items"), "WinBtnCloseMac"))
                 {
                     if (!searching)
                         prefs.ClearAll();
                     else
                     {
+                        int i = 0;
                         foreach (var value in prefs.dictionary)
-                            if (!value.Key.ToLower().Contains(filter))
+                        {
+                            if (!showItem[i])
+                            {
+                                i++;
                                 continue;
+                            }
                             else
                                 changes.Add(new Changes(value.Key, "", default, false, false, true, 0));
+                            i++;
+                        }
                     }
                     EditorUtility.SetDirty(script);
                 }
@@ -184,15 +213,18 @@ namespace Neonagee.EditorInternal
                     EditorUtility.SetDirty(script);
                 }
                 EditorGUILayout.EndHorizontal();
-                if (EditorGUILayout.BeginFadeGroup(searching ? 1 : collapse.faded))
+                if (EditorGUILayout.BeginFadeGroup(collapse.faded))
                 {
                     if (prefs.Count > 0)
                     {
                         int i = 0;
                         foreach (var value in prefs.dictionary)
                         {
-                            if (!value.Key.ToLower().Contains(filter))
+                            if (searching && !showItem[i])
+                            {
+                                i++;
                                 continue;
+                            }
                             EditorGUILayout.BeginHorizontal();
                             bool keyChanged = false;
                             bool valueChanged = false;
@@ -268,7 +300,10 @@ namespace Neonagee.EditorInternal
                 return prefs;
             }
         }
-
+        void Refresh()
+        {
+            FindSaveFiles(script.FilesPath);
+        }
         Vector2 scrollPos;
         public void OnGUI()
         {
@@ -280,7 +315,9 @@ namespace Neonagee.EditorInternal
                 GetGUIStyles();
                 isInitialized = true;
             }
-            Undo.RecordObject(script, "Editor Local Prefs Window");
+            if (script == null)
+                script = EditorLocalPrefs.Data;
+            Undo.RecordObject(script, "Local Prefs Window");
 
             EditorGUILayout.BeginHorizontal();
             if (EditorGUILayout.DropdownButton(new GUIContent(" " + files[selectedFile] + " "), FocusType.Passive, EditorStyles.toolbarDropDown))
@@ -295,6 +332,7 @@ namespace Neonagee.EditorInternal
                             EditorLocalPrefs.Save(files[selectedFile]);
                             selectedFile = index;
                             EditorLocalPrefs.Load(files[index]);
+                            Refresh();
                         });
                     else
                         menu.AddDisabledItem(new GUIContent(files[i]));
@@ -302,11 +340,11 @@ namespace Neonagee.EditorInternal
                 menu.AddSeparator("");
                 menu.AddItem(new GUIContent("Refresh"), false, () =>
                 {
-                    FindSaveFiles(script.filesPath);
+                    Refresh();
                 });
                 menu.AddItem(new GUIContent("Open Files Folder"), false, () =>
                 {
-                    EditorUtility.RevealInFinder(script.filesPath + files[selectedFile] + EditorLocalPrefs.filesExtension);
+                    EditorUtility.RevealInFinder(script.FilesPath + files[selectedFile] + EditorLocalPrefs.filesExtension);
                 });
                 menu.ShowAsContext();
             }
@@ -317,7 +355,8 @@ namespace Neonagee.EditorInternal
 
             if (GUILayout.Button(" Save ", EditorStyles.toolbarButton))
             {
-                EditorLocalPrefs.Save(EditorLocalPrefs.defaultFileName);
+                EditorLocalPrefs.Save(files[selectedFile]);
+                Refresh();
             }
             if (GUILayout.Button(GUIContent.none, EditorStyles.toolbarDropDown, GUILayout.Width(17)))
             {
@@ -325,14 +364,17 @@ namespace Neonagee.EditorInternal
                 menu.AddItem(new GUIContent("Save As New"), false, () =>
                 {
                     EditorLocalPrefs.Save(files[selectedFile] + " (New)");
-                    FindSaveFiles(script.filesPath);
+                    Refresh();
                     EditorLocalPrefs.Load(files[selectedFile]);
                 });
                 menu.AddItem(new GUIContent("Delete File"), false, () =>
                 {
-                    EditorLocalPrefs.DeleteFile(files[selectedFile]);
-                    FindSaveFiles(script.filesPath);
-                    EditorLocalPrefs.Load(files[selectedFile]);
+                    if (EditorUtility.DisplayDialog("Delete " + files[selectedFile], "Are you sure you want to delete this file?\nThis action cannot be undone.", "Yes", "Cancel"))
+                    {
+                        EditorLocalPrefs.DeleteFile(files[selectedFile]);
+                        Refresh();
+                        EditorLocalPrefs.Load(files[selectedFile]);
+                    }
                 });
                 menu.ShowAsContext();
             }

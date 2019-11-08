@@ -27,8 +27,8 @@ namespace Neonagee.LocalPreferences
         string ChangeKey(string oldKey, string newKey);
         string KeyByValue(object value);
         List<string> KeysByValue(object value);
-        bool DeleteKey(string key);
-        void DeleteKeys(List<string> keys);
+        bool RemoveKey(string key);
+        void RemoveKeys(List<string> keys);
         string[] AllKeys(Type type);
         List<object> AllValues(Type type);
         void ClearAll();
@@ -124,7 +124,7 @@ namespace Neonagee.LocalPreferences
                 }
             return keys;
         }
-        public bool DeleteKey(string key)
+        public bool RemoveKey(string key)
         {
             if (dictionary.ContainsKey(key))
             {
@@ -133,7 +133,7 @@ namespace Neonagee.LocalPreferences
             }
             return false;
         }
-        public void DeleteKeys(List<string> keys)
+        public void RemoveKeys(List<string> keys)
         {
             for (int k = 0; k < keys.Count; k++)
                 if (keys[k] != default)

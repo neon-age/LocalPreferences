@@ -9,7 +9,7 @@ public sealed class EditorLocalPrefs : ScriptableObject
 {
     public static readonly string defaultFileName = "EditorPrefs";
     public static readonly string filesExtension = ".xg";
-    public string filesPath
+    public string FilesPath
     {
         get
         {
@@ -23,13 +23,13 @@ public sealed class EditorLocalPrefs : ScriptableObject
 
     public static void Save(string fileName)
     {
-        string filePath = Data.filesPath + fileName + filesExtension;
+        string filePath = Data.FilesPath + fileName + filesExtension;
         string json = JsonUtility.ToJson(m_Data);
         File.WriteAllText(filePath, json);
     }
     public static void Load(string fileName)
     {
-        string filePath = Data.filesPath + fileName + filesExtension;
+        string filePath = Data.FilesPath + fileName + filesExtension;
         if (File.Exists(filePath))
         {
             string json = File.ReadAllText(filePath);
@@ -41,7 +41,7 @@ public sealed class EditorLocalPrefs : ScriptableObject
     }
     public static void DeleteFile(string fileName)
     {
-        string filePath = Data.filesPath + fileName + filesExtension;
+        string filePath = Data.FilesPath + fileName + filesExtension;
         if (File.Exists(filePath))
             File.Delete(filePath);
     }
@@ -170,20 +170,20 @@ public sealed class EditorLocalPrefs : ScriptableObject
                 return true;
         return false;
     }
-    /// <summary>Delete all keys and values from preferences. Use with caution.</summary>
-    public static void DeleteAll()
+    /// <summary>Clear all keys and values from all preferences. Use with caution.</summary>
+    public static void ClearAll()
     {
         foreach (var pref in Data.prefs.Values)
             pref.ClearAll();
     }
-    /// <summary>Delete key and it's value from preferences.</summary>
-    public static bool DeleteKey(string key)
+    /// <summary>Remove key and it's value from all preferences.</summary>
+    public static bool RemoveKey(string key)
     {
-        bool deleted = false;
+        bool removed = false;
         foreach (var pref in Data.prefs.Values)
-            if (pref.DeleteKey(key))
-                deleted = true;
-        return deleted;
+            if (pref.RemoveKey(key))
+                removed = true;
+        return removed;
     }
 
 
@@ -203,23 +203,23 @@ public sealed class EditorLocalPrefs : ScriptableObject
             Debug.LogError(TypeIsNotSupported("LocalPrefs HasKey<T>", t));
         return false;
     }
-    /// <summary>Delete key and it's value from given preference.</summary>
-    public static bool DeleteKey<T>(string key)
+    /// <summary>Remove key and it's value from given preference.</summary>
+    public static bool RemoveKey<T>(string key)
     {
         Type t = typeof(T);
         if (Data.prefs.TryGetValue(t, out IPrefs pref))
         {
-            if (pref.DeleteKey(key))
+            if (pref.RemoveKey(key))
             {
-                pref.DeleteKey(key);
+                pref.RemoveKey(key);
                 return true;
             }
         }
-        Debug.LogError(TypeIsNotSupported("LocalPrefs DeleteKey<T>", t));
+        Debug.LogError(TypeIsNotSupported("LocalPrefs RemoveKey<T>", t));
         return false;
     }
-    /// <summary>Delete all keys and values from given preference. Use with caution.</summary>
-    public static void DeleteAll<T>()
+    /// <summary>Clear all keys and values from given preference. Use with caution.</summary>
+    public static void ClearAll<T>()
     {
         Type t = typeof(T);
         if (Data.prefs.TryGetValue(t, out IPrefs pref))
@@ -227,7 +227,7 @@ public sealed class EditorLocalPrefs : ScriptableObject
             pref.ClearAll();
             return;
         }
-        Debug.LogError(TypeIsNotSupported("LocalPrefs DeleteAll", t));
+        Debug.LogError(TypeIsNotSupported("LocalPrefs ClearAll", t));
     }
     /// <summary>Find key in all preferences and change it.</summary>
     public static string ChangeKey(string oldKey, string newKey)
@@ -260,35 +260,35 @@ public sealed class EditorLocalPrefs : ScriptableObject
         Debug.LogError(TypeIsNotSupported("LocalPrefs ChangeKey<T>", t));
         return default;
     }
-    /// <summary>Look up for one key with given value and deletes it.<para />
+    /// <summary>Look up for one key with given value and removes it from preference.<para />
     /// Returns true if key is found.<para />
     /// This operation is slow, don't use it constantly.</summary>
-    public static bool DeleteKeyByValue<T>(T value)
+    public static bool RemoveKeyByValue<T>(T value)
     {
         Type t = typeof(T);
         if (Data.prefs.TryGetValue(t, out IPrefs pref))
         {
             string key = pref.KeyByValue(value);
             if (key != default)
-                pref.DeleteKey(key);
+                pref.RemoveKey(key);
             return key != default;
         }
-        Debug.LogError(TypeIsNotSupported("LocalPrefs DeleteKeyByValue", t));
+        Debug.LogError(TypeIsNotSupported("LocalPrefs RemoveKeyByValue", t));
         return false;
     }
-    /// <summary>Look up for keys with given value and delete them.<para /> 
+    /// <summary>Look up for keys with given value and remove them from preference.<para /> 
     /// Returns true if at least one key is found.
     /// <para>This operation is slow, don't use it constantly.</para></summary>
-    public static bool DeleteKeysByValue<T>(T value)
+    public static bool RemoveKeysByValue<T>(T value)
     {
         Type t = typeof(T);
         if (Data.prefs.TryGetValue(t, out IPrefs pref))
         {
             List<string> keys = pref.KeysByValue(value);
-            pref.DeleteKeys(keys);
+            pref.RemoveKeys(keys);
             return keys.Count > 0;
         }
-        Debug.LogError(TypeIsNotSupported("LocalPrefs DeleteKeysByValue", t));
+        Debug.LogError(TypeIsNotSupported("LocalPrefs RemoveKeysByValue", t));
         return false;
     }
     /// <summary>Find value in this preference by key and set new value to it. 

@@ -9,30 +9,161 @@ public sealed class LocalPrefs : ScriptableObject
 {
     public static readonly string defaultFileName = "PlayerData";
     public static readonly string filesExtension = ".xg";
-    public string filesPath { get { return Application.persistentDataPath + "/"; } }
+    public string FilesPath => Application.persistentDataPath + "/";
     public static string currentFile;
 
-    public static void Save(string fileName)
+    // Rijndael
+                                 //01234567890123456789012345678901 - key must be 32 chars
+    const string ENCRYPTION_KEY = "zK3rN5m#DhX8[CYE%'Q={?M(#`-eqYA7";
+    const string ENCRYPTION_SYMBOL = "䕡";
+    public bool enableEncryption = true;
+    public bool autoSaveOnQuit = true;
+    static readonly Rijndael crypto = new Rijndael();
+
+    // Delegates
+    public delegate void OnLoadError(string fileName, string filePath = "");
+    public delegate void OnLoadFinish();
+    public delegate void OnSaveFinish();
+    public static OnLoadError onLoadError;
+    public static OnLoadFinish onLoadFinish;
+    public static OnSaveFinish onSaveFinish;
+
+    static void SaveToFile(string fileName, bool encrypt)
     {
-        string filePath = Data.filesPath + fileName + filesExtension;
-        string json = JsonUtility.ToJson(Data);
-        File.WriteAllText(filePath, json);
-    }
-    public static void Load(string fileName)
-    {
-        string filePath = Data.filesPath + fileName + filesExtension;
-        if (File.Exists(filePath))
+        if (fileName.Contains(ENCRYPTION_SYMBOL))
         {
-            string json = File.ReadAllText(filePath);
-            JsonUtility.FromJsonOverwrite(json, Data);
+            fileName = fileName.Replace(ENCRYPTION_SYMBOL, "");
+        }
+        string fullName = fileName + filesExtension;
+        string fullCryptoName = fileName + ENCRYPTION_SYMBOL + filesExtension;
+        string filePath = Data.FilesPath + fullName;
+        string cryptoFilePath = Data.FilesPath + fullCryptoName;
+
+        string json = JsonUtility.ToJson(Data);
+
+        if (encrypt)
+        {
+            if (File.Exists(filePath)) // Delete old file
+            {
+                File.Delete(filePath);
+                //Debug.Log("delete old " + fullName);
+            }
+            byte[] encryptedData = crypto.Encrypt(json, ENCRYPTION_KEY);
+            File.WriteAllBytes(cryptoFilePath, encryptedData);
+            //Debug.Log("save encrypted " + fullCryptoName);
+            onSaveFinish?.Invoke();
         }
         else
-            Save(fileName);
-        currentFile = fileName;
+        {
+            if (File.Exists(cryptoFilePath)) // Delete old encrypted file
+            {
+                File.Delete(cryptoFilePath);
+                //Debug.Log("delete crypto " + fullCryptoName);
+            }
+            File.WriteAllText(filePath, json);
+            //Debug.Log("save " + fullName);
+            onSaveFinish?.Invoke();
+        }
+    }
+    public static void Save(string fileName, bool encrypt)
+    {
+        SaveToFile(fileName, encrypt);
+    }
+    public static void Save(string fileName)
+    {
+        SaveToFile(fileName, Data.enableEncryption);
+    }
+    public static void Load(string fileName, bool encrypt = false)
+    {
+        if (fileName.Contains(ENCRYPTION_SYMBOL))
+        {
+            fileName = fileName.Replace(ENCRYPTION_SYMBOL, "");
+        }
+        string fullName = fileName + filesExtension;
+        string fullCryptoName = fileName + ENCRYPTION_SYMBOL + filesExtension;
+        string filePath = Data.FilesPath + fullName;
+        string cryptoFilePath = Data.FilesPath + fullCryptoName;
+
+        string json;
+        bool normalFileExists = File.Exists(filePath);
+        bool cryptoFileExists = File.Exists(cryptoFilePath);
+
+        if (normalFileExists) // Not encrypted file exists
+        {
+            Data.enableEncryption = false;
+            try
+            {
+                json = File.ReadAllText(filePath);
+                JsonUtility.FromJsonOverwrite(json, Data);
+                currentFile = fileName;
+
+                if (encrypt) // Save loaded file as encrypted
+                {
+                    Data.enableEncryption = true;
+                    Save(fileName, encrypt);
+                    currentFile = fileName;
+                }
+            }
+            catch // The file is damaged or encrypted
+            {
+                json = Decrypt(filePath); // Try to decrypt
+                if (json != "")
+                {
+                    JsonUtility.FromJsonOverwrite(json, Data);
+                    currentFile = fileName;
+                    onLoadFinish?.Invoke();
+                }
+                else // File is damaged
+                    onLoadError?.Invoke(fullCryptoName, filePath);
+            }
+            
+        }
+        if (cryptoFileExists) // File is encrypted
+        {
+            if (normalFileExists && !encrypt) // We don't need encrypted file - delete it
+            {
+                File.Delete(cryptoFilePath);
+            }
+            else
+            {
+                Data.enableEncryption = true;
+                json = Decrypt(cryptoFilePath);
+                if (json != "")
+                {
+                    JsonUtility.FromJsonOverwrite(json, Data);
+                    currentFile = fileName;
+                }
+                else // File is marked as encrypted, but decryption has been failed
+                {
+                    try
+                    {
+                        json = File.ReadAllText(cryptoFilePath); // Try to read it straightforward
+                        JsonUtility.FromJsonOverwrite(json, Data);
+                        currentFile = fileName;
+                    }
+                    catch // File is damaged?
+                    {
+                        onLoadError?.Invoke(fullCryptoName, filePath);
+                    }
+                }
+                currentFile = fileName;
+            }
+        }
+        if(!normalFileExists && !cryptoFileExists) // No file found, create new empty one
+        {
+            ClearAll();
+            Save(fileName, encrypt);
+            currentFile = fileName;
+        }
+    }
+    static string Decrypt(string filePath)
+    {
+        byte[] encryptedData = File.ReadAllBytes(filePath);
+        return crypto.Decrypt(encryptedData, ENCRYPTION_KEY);
     }
     public static void DeleteFile(string fileName)
     {
-        string filePath = Data.filesPath + fileName + filesExtension;
+        string filePath = Data.FilesPath + fileName + filesExtension;
         if (File.Exists(filePath))
             File.Delete(filePath);
     }
@@ -46,22 +177,23 @@ public sealed class LocalPrefs : ScriptableObject
                 return m_Data;
 
             m_Data = CreateInstance<LocalPrefs>();
+
+            Load(defaultFileName);
             if (Application.isPlaying)
             {
                 DontDestroyOnLoad(m_Data);
-                Application.quitting += () => Save(currentFile);
+                if(m_Data.autoSaveOnQuit)
+                    Application.wantsToQuit += SaveOnQuit;
             }
-
-            Load(defaultFileName);
             m_Data.Initialize();
 
             return m_Data;
         }
     }
-
-    private void OnDisable()
+    static bool SaveOnQuit()
     {
-        Save(currentFile);
+        Save(currentFile, Data.enableEncryption);
+        return true;
     }
 
     public Dictionary<Type, IPrefs> prefs = new Dictionary<Type, IPrefs>();
@@ -165,20 +297,20 @@ public sealed class LocalPrefs : ScriptableObject
                 return true;
         return false;
     }
-    /// <summary>Delete all keys and values from preferences. Use with caution.</summary>
-    public static void DeleteAll()
+    /// <summary>Clear all keys and values from all preferences. Use with caution.</summary>
+    public static void ClearAll()
     {
         foreach (var pref in Data.prefs.Values)
             pref.ClearAll();
     }
-    /// <summary>Delete key and it's value from preferences.</summary>
-    public static bool DeleteKey(string key)
+    /// <summary>Remove key and it's value from preferences.</summary>
+    public static bool RemoveKey(string key)
     {
-        bool deleted = false;
+        bool removed = false;
         foreach (var pref in Data.prefs.Values)
-            if (pref.DeleteKey(key))
-                deleted = true;
-        return deleted;
+            if (pref.RemoveKey(key))
+                removed = true;
+        return removed;
     }
 
 
@@ -198,23 +330,23 @@ public sealed class LocalPrefs : ScriptableObject
             Debug.LogError(TypeIsNotSupported("LocalPrefs HasKey<T>", t));
         return false;
     }
-    /// <summary>Delete key and it's value from given preference.</summary>
-    public static bool DeleteKey<T>(string key)
+    /// <summary>Remove key and it's value from given preference.</summary>
+    public static bool RemoveKey<T>(string key)
     {
         Type t = typeof(T);
         if (Data.prefs.TryGetValue(t, out IPrefs pref))
         {
-            if (pref.DeleteKey(key))
+            if (pref.RemoveKey(key))
             {
-                pref.DeleteKey(key);
+                pref.RemoveKey(key);
                 return true;
             }
         }
-        Debug.LogError(TypeIsNotSupported("LocalPrefs DeleteKey<T>", t));
+        Debug.LogError(TypeIsNotSupported("LocalPrefs RemoveKey<T>", t));
         return false;
     }
-    /// <summary>Delete all keys and values from given preference. Use with caution.</summary>
-    public static void DeleteAll<T>()
+    /// <summary>Clear all keys and values from given preference. Use with caution.</summary>
+    public static void ClearAll<T>()
     {
         Type t = typeof(T);
         if (Data.prefs.TryGetValue(t, out IPrefs pref))
@@ -222,7 +354,7 @@ public sealed class LocalPrefs : ScriptableObject
             pref.ClearAll();
             return;
         }
-        Debug.LogError(TypeIsNotSupported("LocalPrefs DeleteAll", t));
+        Debug.LogError(TypeIsNotSupported("LocalPrefs ClearAll", t));
     }
     /// <summary>Find key in all preferences and change it.</summary>
     public static string ChangeKey(string oldKey, string newKey)
@@ -255,35 +387,35 @@ public sealed class LocalPrefs : ScriptableObject
         Debug.LogError(TypeIsNotSupported("LocalPrefs ChangeKey<T>", t));
         return default;
     }
-    /// <summary>Look up for one key with given value and deletes it.<para />
+    /// <summary>Look up for one key with given value and removes it.<para />
     /// Returns true if key is found.<para />
     /// This operation is slow, don't use it constantly.</summary>
-    public static bool DeleteKeyByValue<T>(T value)
+    public static bool RemoveKeyByValue<T>(T value)
     {
         Type t = typeof(T);
         if (Data.prefs.TryGetValue(t, out IPrefs pref))
         {
             string key = pref.KeyByValue(value);
             if (key != default)
-                pref.DeleteKey(key);
+                pref.RemoveKey(key);
             return key != default;
         }
-        Debug.LogError(TypeIsNotSupported("LocalPrefs DeleteKeyByValue", t));
+        Debug.LogError(TypeIsNotSupported("LocalPrefs RemoveKeyByValue", t));
         return false;
     }
-    /// <summary>Look up for keys with given value and delete them.<para /> 
+    /// <summary>Look up for keys with given value and remove them.<para /> 
     /// Returns true if at least one key is found.
     /// <para>This operation is slow, don't use it constantly.</para></summary>
-    public static bool DeleteKeysByValue<T>(T value)
+    public static bool RemoveKeysByValue<T>(T value)
     {
         Type t = typeof(T);
         if (Data.prefs.TryGetValue(t, out IPrefs pref))
         {
             List<string> keys = pref.KeysByValue(value);
-            pref.DeleteKeys(keys);
+            pref.RemoveKeys(keys);
             return keys.Count > 0;
         }
-        Debug.LogError(TypeIsNotSupported("LocalPrefs DeleteKeysByValue", t));
+        Debug.LogError(TypeIsNotSupported("LocalPrefs RemoveKeysByValue", t));
         return false;
     }
     /// <summary>Find value in this preference by key and set new value to it. 
