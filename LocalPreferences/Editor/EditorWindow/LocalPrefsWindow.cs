@@ -9,7 +9,6 @@ using System.Text.RegularExpressions;
 
 namespace Neonagee.EditorInternal
 {
-    [CustomEditor(typeof(LocalPrefs))]
     internal sealed class LocalPrefsWindow : LocalPrefsWindowBase
     {
         static LocalPrefs script;
